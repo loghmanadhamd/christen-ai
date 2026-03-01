@@ -373,6 +373,72 @@ Please recommend the top 3 resorts for this group.`;
 
     recommendations.flightSummary = flightSummary;
 
+    // 8d. Fetch real lodging for the 3 recommended resorts
+    let realLodgingByResort: Record<string, any> = {};
+    if (resortNames.length > 0 && trip.date_start && trip.date_end) {
+      try {
+        console.log('Fetching real lodging for', resortNames.length, 'resorts...');
+
+        const budgetVibe = parseInt(vibeObj['budget'] || '50');
+        const energyVibe = parseInt(vibeObj['energy'] || '50');
+
+        // Rough per-person-per-night estimate (~40% of trip budget to lodging)
+        let budgetPerNight: number | null = null;
+        if (trip.budget_amount) {
+          const perPersonBudget = trip.budget_type === 'per_person'
+            ? trip.budget_amount
+            : trip.budget_amount / Math.max(1, trip.group_size);
+          budgetPerNight = Math.round(perPersonBudget * 0.4 / nights);
+        }
+
+        const lodgingRes = await fetch(`${SUPABASE_URL}/functions/v1/fetch-real-lodging`, {
+          method: 'POST',
+          signal: AbortSignal.timeout(30000),
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` },
+          body: JSON.stringify({
+            resorts: resortNames,
+            checkInDate: trip.date_start,
+            checkOutDate: trip.date_end,
+            adults: trip.group_size,
+            budgetPerNight,
+            vibePreferences: { energy: energyVibe, budget: budgetVibe },
+          }),
+        });
+
+        if (lodgingRes.ok) {
+          const ld = await lodgingRes.json();
+          realLodgingByResort = ld.lodging || {};
+        } else {
+          console.error('fetch-real-lodging returned', lodgingRes.status);
+        }
+      } catch (e) {
+        console.error('Real lodging fetch failed (non-fatal):', e);
+      }
+    }
+
+    // Attach realLodging and update costBreakdown.lodging_per_person
+    if (recommendations.recommendations) {
+      recommendations.recommendations = recommendations.recommendations.map((rec: any) => {
+        const lodgingData = realLodgingByResort[rec.resortName];
+        if (!lodgingData) return rec;
+
+        rec.realLodging = lodgingData;
+
+        // Update lodging cost with real average if we have priced options
+        const pricedOptions = (lodgingData.options || []).filter((o: any) => o.costPerPerson);
+        if (pricedOptions.length > 0 && rec.costBreakdown) {
+          const avgCostPerPerson = Math.round(
+            pricedOptions.reduce((sum: number, o: any) => sum + o.costPerPerson, 0) / pricedOptions.length
+          );
+          const oldLodging = rec.costBreakdown.lodging_per_person ?? 0;
+          rec.costBreakdown.lodging_per_person = avgCostPerPerson;
+          rec.costBreakdown.total = Math.round(rec.costBreakdown.total - oldLodging + avgCostPerPerson);
+        }
+
+        return rec;
+      });
+    }
+
     // 9. Store
     const { error: insertError } = await supabase.from('recommendations').insert({
       trip_id: tripId,

@@ -7,6 +7,7 @@ import {
 import { Button } from "@/components/ui/button";
 import MatchScoreRing from "@/components/MatchScoreRing";
 import FlightDetails from "@/components/FlightDetails";
+import LodgingDetails from "@/components/LodgingDetails";
 
 // Maps resort names to their Wikipedia article titles for accurate photo lookup
 const WIKI_ARTICLE: Record<string, string> = {
@@ -359,8 +360,10 @@ const ResortCard = ({ resort, rank, isBestPick }: ResortCardProps) => {
           </p>
         )}
 
-        {/* Lodging Recommendation */}
-        {resort.lodgingRecommendation && (
+        {/* Lodging */}
+        {resort.realLodging ? (
+          <LodgingDetails realLodging={resort.realLodging} resortName={resort.resortName} />
+        ) : resort.lodgingRecommendation ? (
           <div className="glass rounded-xl p-3 flex items-center gap-3">
             <Hotel className="h-4 w-4 text-primary shrink-0" />
             <div className="text-xs text-muted-foreground">
@@ -371,7 +374,7 @@ const ResortCard = ({ resort, rank, isBestPick }: ResortCardProps) => {
               ${resort.lodgingRecommendation.costPerPerson}/person total
             </div>
           </div>
-        )}
+        ) : null}
 
         {/* Real Flight Options */}
         <FlightDetails realFlights={resort.realFlights} resortName={resort.resortName} />
