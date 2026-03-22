@@ -188,7 +188,7 @@ async function fetchCurrentSnowData(resort: typeof RESORTS[0]): Promise<CurrentS
 
     return {
       isHistorical: false,
-      currentSnowDepth: Math.round(currentSnowDepth * 10) / 10,
+      currentSnowDepth: Math.round(currentSnowDepth * 100 * 10) / 10, // API returns meters, convert to cm
       last24hrSnowfall: Math.round(last24hrSnowfall * 10) / 10,
       last7daysSnowfall: Math.round(last7daysSnowfall * 10) / 10,
       seasonTotalSnowfall: Math.round(seasonTotalSnowfall * 10) / 10,

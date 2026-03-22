@@ -134,17 +134,21 @@ const SnowConditionsDisplay = ({ snow }: { snow: any }) => {
   if (!snow.isHistorical) {
     return (
       <div className="flex flex-wrap gap-2">
-        <div className="flex items-center gap-1.5 bg-primary/10 text-primary text-xs font-semibold px-3 py-1.5 rounded-full">
-          <Mountain className="h-3.5 w-3.5" /> {snow.currentSnowDepth ?? 0}cm base
-        </div>
+        {(snow.currentSnowDepth ?? 0) > 0 && (
+          <div className="flex items-center gap-1.5 bg-primary/10 text-primary text-xs font-semibold px-3 py-1.5 rounded-full">
+            <Mountain className="h-3.5 w-3.5" /> {snow.currentSnowDepth}cm base
+          </div>
+        )}
         {(snow.last24hrSnowfall ?? 0) > 0 && (
           <div className="flex items-center gap-1.5 bg-primary/10 text-primary text-xs font-semibold px-3 py-1.5 rounded-full">
             <Snowflake className="h-3.5 w-3.5" /> +{snow.last24hrSnowfall}cm / 24hr
           </div>
         )}
-        <div className="flex items-center gap-1.5 bg-primary/10 text-primary text-xs font-semibold px-3 py-1.5 rounded-full">
-          <Snowflake className="h-3.5 w-3.5" /> +{snow.last7daysSnowfall ?? 0}cm / 7d
-        </div>
+        {(snow.last7daysSnowfall ?? 0) > 0 && (
+          <div className="flex items-center gap-1.5 bg-primary/10 text-primary text-xs font-semibold px-3 py-1.5 rounded-full">
+            <Snowflake className="h-3.5 w-3.5" /> +{snow.last7daysSnowfall}cm / 7d
+          </div>
+        )}
         {(snow.seasonTotalSnowfall ?? 0) > 0 && (
           <div className="flex items-center gap-1.5 bg-primary/10 text-primary text-xs font-semibold px-3 py-1.5 rounded-full">
             <TrendingUp className="h-3.5 w-3.5" /> {snow.seasonTotalSnowfall}cm season
