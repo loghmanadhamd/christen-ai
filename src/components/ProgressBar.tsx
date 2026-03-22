@@ -8,7 +8,7 @@ interface ProgressBarProps {
 
 const ProgressBar = ({ currentStep }: ProgressBarProps) => {
   return (
-    <div className="w-full max-w-2xl mx-auto mb-10">
+    <div className="w-full max-w-2xl mx-auto">
       <div className="flex items-center justify-between relative">
         {/* Background line */}
         <div className="absolute top-4 left-0 right-0 h-0.5 bg-border" />
@@ -30,7 +30,7 @@ const ProgressBar = ({ currentStep }: ProgressBarProps) => {
                   isDone
                     ? "bg-primary text-primary-foreground"
                     : isActive
-                    ? "bg-primary text-primary-foreground animate-pulse-glow"
+                    ? "bg-primary text-primary-foreground"
                     : "bg-secondary text-muted-foreground"
                 }`}
                 animate={{ scale: isActive ? 1.15 : 1 }}

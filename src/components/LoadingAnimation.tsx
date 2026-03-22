@@ -33,15 +33,15 @@ const LoadingAnimation = () => {
             {/* Background mountain */}
             <motion.path
               d="M0 160 L80 40 L130 100 L160 60 L256 160 Z"
-              fill="hsl(var(--secondary))"
+              fill="#BFDBFE"
               initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 0.5, y: 0 }}
+              animate={{ opacity: 0.7, y: 0 }}
               transition={{ duration: 0.8, delay: 0.2 }}
             />
             {/* Foreground mountain */}
             <motion.path
               d="M20 160 L128 20 L236 160 Z"
-              fill="hsl(var(--muted))"
+              fill="#93C5FD"
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.8 }}
@@ -49,7 +49,7 @@ const LoadingAnimation = () => {
             {/* Snow cap */}
             <motion.path
               d="M100 65 L128 20 L156 65 L145 55 L128 70 L111 55 Z"
-              fill="hsl(var(--foreground) / 0.9)"
+              fill="white"
               initial={{ opacity: 0, scale: 0.8 }}
               animate={{ opacity: 1, scale: 1 }}
               transition={{ duration: 0.6, delay: 0.5 }}
@@ -60,7 +60,7 @@ const LoadingAnimation = () => {
           {Array.from({ length: 12 }).map((_, i) => (
             <motion.div
               key={i}
-              className="absolute rounded-full bg-foreground/30"
+              className="absolute rounded-full bg-primary/30"
               style={{
                 width: Math.random() * 4 + 2,
                 height: Math.random() * 4 + 2,

@@ -9,7 +9,6 @@ import MatchScoreRing from "@/components/MatchScoreRing";
 import FlightDetails from "@/components/FlightDetails";
 import LodgingDetails from "@/components/LodgingDetails";
 
-// Maps resort names to their Wikipedia article titles for accurate photo lookup
 const WIKI_ARTICLE: Record<string, string> = {
   "Whistler Blackcomb": "Whistler_Blackcomb",
   "Vail": "Vail_Mountain_Resort",
@@ -61,37 +60,73 @@ interface ResortCardProps {
 const VIBE_DIMS = [
   { key: "energy", icon: "⚡", label: "Energy" },
   { key: "budget", icon: "💰", label: "Budget Vibe" },
-  { key: "skill",  icon: "🎿", label: "Skill Mix" },
+  { key: "skill",  icon: "🎿", label: "Skill Match" },
 ] as const;
 
+/** Preference Fit — 3-tile grid with dot-meter visual */
 const VibeAlignmentPanel = ({ alignment }: { alignment: any }) => {
   if (!alignment) return null;
+
+  const hasAny = VIBE_DIMS.some((d) => alignment[d.key]);
+  if (!hasAny) return null;
+
   return (
-    <div className="glass rounded-xl p-4 space-y-3">
-      <div className="text-xs font-semibold text-foreground uppercase tracking-wider">Preference Fit</div>
-      <div className="space-y-3">
+    <div className="inset-surface p-4 space-y-3">
+      <div className="text-xs font-semibold text-foreground tracking-wide">Preference Fit</div>
+
+      <div className="grid grid-cols-3 gap-2">
         {VIBE_DIMS.map((d) => {
           const item = alignment[d.key];
           if (!item) return null;
           const score: number = item.score ?? 0;
-          const barColor = score >= 75 ? "bg-success" : score >= 50 ? "bg-primary" : "bg-warning";
-          const textColor = score >= 75 ? "text-success" : score >= 50 ? "text-primary" : "text-warning";
+          const filled = Math.ceil((score / 100) * 5); // 0–5 pips
+          const dotColor =
+            score >= 75 ? "bg-green-500" : score >= 50 ? "bg-primary" : "bg-amber-400";
+          const scoreColor =
+            score >= 75 ? "text-green-600" : score >= 50 ? "text-primary" : "text-amber-500";
+
           return (
-            <div key={d.key} className="space-y-1">
-              <div className="flex items-center justify-between text-xs">
-                <span className="text-muted-foreground">{d.icon} {d.label}</span>
-                <span className={`font-bold tabular-nums ${textColor}`}>{score}%</span>
+            <div
+              key={d.key}
+              className="bg-white rounded-xl p-3 flex flex-col items-center gap-2 text-center border border-black/[0.05]"
+            >
+              <span className="text-2xl leading-none">{d.icon}</span>
+              <span className={`text-lg font-black tabular-nums leading-none ${scoreColor}`}>
+                {score}%
+              </span>
+              {/* 5-pip dot meter */}
+              <div className="flex gap-[3px]">
+                {[1, 2, 3, 4, 5].map((pip) => (
+                  <div
+                    key={pip}
+                    className={`w-4 h-1.5 rounded-full transition-colors ${
+                      pip <= filled ? dotColor : "bg-gray-100"
+                    }`}
+                  />
+                ))}
               </div>
-              <div className="h-1.5 bg-muted rounded-full overflow-hidden">
-                <div className={`h-full ${barColor} rounded-full transition-all`} style={{ width: `${score}%` }} />
-              </div>
-              {item.label && (
-                <p className="text-[10px] text-muted-foreground leading-snug">{item.label}</p>
-              )}
+              <span className="text-[10px] font-semibold text-muted-foreground leading-tight">
+                {d.label}
+              </span>
             </div>
           );
         })}
       </div>
+
+      {/* AI descriptive labels */}
+      {VIBE_DIMS.some((d) => alignment[d.key]?.label) && (
+        <div className="space-y-1 pt-0.5">
+          {VIBE_DIMS.map((d) => {
+            const label = alignment[d.key]?.label;
+            if (!label) return null;
+            return (
+              <p key={d.key} className="text-[10px] text-muted-foreground leading-relaxed">
+                <span className="mr-1">{d.icon}</span>{label}
+              </p>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 };
@@ -99,22 +134,29 @@ const VibeAlignmentPanel = ({ alignment }: { alignment: any }) => {
 const TerrainBar = ({ terrain }: { terrain: any }) => {
   if (!terrain) return null;
   const segments = [
-    { key: "beginner", label: "Beg", pct: terrain.beginner, color: "bg-green-500" },
-    { key: "intermediate", label: "Int", pct: terrain.intermediate, color: "bg-blue-500" },
-    { key: "advanced", label: "Adv", pct: terrain.advanced, color: "bg-orange-500" },
-    { key: "expert", label: "Exp", pct: terrain.expert, color: "bg-red-500" },
+    { key: "beginner",     label: "Beginner",     pct: terrain.beginner,     color: "bg-green-400" },
+    { key: "intermediate", label: "Intermediate", pct: terrain.intermediate, color: "bg-blue-400" },
+    { key: "advanced",     label: "Advanced",     pct: terrain.advanced,     color: "bg-orange-400" },
+    { key: "expert",       label: "Expert",       pct: terrain.expert,       color: "bg-red-400" },
   ];
-
   return (
     <div className="space-y-2">
-      <div className="flex h-3 rounded-full overflow-hidden">
-        {segments.map((s) => (
-          <div key={s.key} className={`${s.color} transition-all`} style={{ width: `${s.pct}%` }} />
-        ))}
+      <div className="text-xs font-semibold text-foreground">Terrain Breakdown</div>
+      <div className="flex h-2.5 rounded-full overflow-hidden gap-px">
+        {segments.map((s) =>
+          (s.pct ?? 0) > 0 ? (
+            <div key={s.key} className={`${s.color}`} style={{ width: `${s.pct}%` }} />
+          ) : null
+        )}
       </div>
       <div className="flex justify-between text-[10px] text-muted-foreground font-medium">
         {segments.map((s) => (
-          <span key={s.key}>{s.label} {s.pct}%</span>
+          <span key={s.key} className="flex items-center gap-0.5">
+            <span
+              className={`inline-block w-2 h-2 rounded-sm ${s.color}`}
+            />
+            {s.pct ?? 0}%
+          </span>
         ))}
       </div>
     </div>
@@ -128,6 +170,27 @@ const fmtSnowDate = (iso: string) => {
   return `${months[+mo - 1]} ${+dy}`;
 };
 
+const SnowBadge = ({
+  icon: Icon,
+  label,
+  muted = false,
+}: {
+  icon: React.ElementType;
+  label: string;
+  muted?: boolean;
+}) => (
+  <div
+    className={`flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-full ${
+      muted
+        ? "bg-gray-100 text-muted-foreground"
+        : "bg-primary/10 text-primary"
+    }`}
+  >
+    <Icon className="h-3.5 w-3.5 shrink-0" />
+    {label}
+  </div>
+);
+
 const SnowConditionsDisplay = ({ snow }: { snow: any }) => {
   if (!snow) return null;
 
@@ -135,30 +198,21 @@ const SnowConditionsDisplay = ({ snow }: { snow: any }) => {
     return (
       <div className="flex flex-wrap gap-2">
         {(snow.currentSnowDepth ?? 0) > 0 && (
-          <div className="flex items-center gap-1.5 bg-primary/10 text-primary text-xs font-semibold px-3 py-1.5 rounded-full">
-            <Mountain className="h-3.5 w-3.5" /> {snow.currentSnowDepth}cm base
-          </div>
+          <SnowBadge icon={Mountain} label={`${snow.currentSnowDepth}cm base`} />
         )}
         {(snow.last24hrSnowfall ?? 0) > 0 && (
-          <div className="flex items-center gap-1.5 bg-primary/10 text-primary text-xs font-semibold px-3 py-1.5 rounded-full">
-            <Snowflake className="h-3.5 w-3.5" /> +{snow.last24hrSnowfall}cm / 24hr
-          </div>
+          <SnowBadge icon={Snowflake} label={`+${snow.last24hrSnowfall}cm / 24hr`} />
         )}
         {(snow.last7daysSnowfall ?? 0) > 0 && (
-          <div className="flex items-center gap-1.5 bg-primary/10 text-primary text-xs font-semibold px-3 py-1.5 rounded-full">
-            <Snowflake className="h-3.5 w-3.5" /> +{snow.last7daysSnowfall}cm / 7d
-          </div>
+          <SnowBadge icon={Snowflake} label={`+${snow.last7daysSnowfall}cm / 7d`} />
         )}
         {(snow.seasonTotalSnowfall ?? 0) > 0 && (
-          <div className="flex items-center gap-1.5 bg-primary/10 text-primary text-xs font-semibold px-3 py-1.5 rounded-full">
-            <TrendingUp className="h-3.5 w-3.5" /> {snow.seasonTotalSnowfall}cm season
-          </div>
+          <SnowBadge icon={TrendingUp} label={`${snow.seasonTotalSnowfall}cm season`} />
         )}
       </div>
     );
   }
 
-  // Historical mode
   const dr = snow.historicalDateRange;
   const dateLabel = dr?.start
     ? `${fmtSnowDate(dr.start)} – ${fmtSnowDate(dr.end)}, ${dr.start.slice(0, 4)}`
@@ -167,27 +221,19 @@ const SnowConditionsDisplay = ({ snow }: { snow: any }) => {
   return (
     <div className="space-y-2">
       {dateLabel && (
-        <div className="flex items-center gap-1.5 bg-muted/60 rounded-lg px-2.5 py-1.5">
+        <div className="flex items-center gap-1.5 bg-gray-50 rounded-lg px-2.5 py-1.5 border border-black/[0.05]">
           <Info className="h-3 w-3 text-muted-foreground shrink-0" />
           <span className="text-[10px] text-muted-foreground">Based on {dateLabel} historical data</span>
         </div>
       )}
       <div className="flex flex-wrap gap-2">
-        <div className="flex items-center gap-1.5 bg-muted/60 text-muted-foreground text-xs font-semibold px-3 py-1.5 rounded-full">
-          <Mountain className="h-3.5 w-3.5" /> ~{snow.historicalSnowDepth ?? 0}cm avg base
-        </div>
+        <SnowBadge icon={Mountain} label={`~${snow.historicalSnowDepth ?? 0}cm avg base`} muted />
         {(snow.historicalLast7dSnowfall ?? 0) > 0 && (
-          <div className="flex items-center gap-1.5 bg-muted/60 text-muted-foreground text-xs font-semibold px-3 py-1.5 rounded-full">
-            <Snowflake className="h-3.5 w-3.5" /> +{snow.historicalLast7dSnowfall}cm / 7d prior
-          </div>
+          <SnowBadge icon={Snowflake} label={`+${snow.historicalLast7dSnowfall}cm / 7d prior`} muted />
         )}
-        <div className="flex items-center gap-1.5 bg-muted/60 text-muted-foreground text-xs font-semibold px-3 py-1.5 rounded-full">
-          <Snowflake className="h-3.5 w-3.5" /> {snow.historicalSnowfall ?? 0}cm trip window
-        </div>
+        <SnowBadge icon={Snowflake} label={`${snow.historicalSnowfall ?? 0}cm trip window`} muted />
         {(snow.historicalSeasonTotal ?? 0) > 0 && (
-          <div className="flex items-center gap-1.5 bg-muted/60 text-muted-foreground text-xs font-semibold px-3 py-1.5 rounded-full">
-            <TrendingUp className="h-3.5 w-3.5" /> {snow.historicalSeasonTotal}cm season-to-date
-          </div>
+          <SnowBadge icon={TrendingUp} label={`${snow.historicalSeasonTotal}cm season`} muted />
         )}
       </div>
     </div>
@@ -200,10 +246,7 @@ const ResortCard = ({ resort, rank, isBestPick }: ResortCardProps) => {
   const [heroImg, setHeroImg] = useState<string | null>(null);
 
   useEffect(() => {
-    const article = WIKI_ARTICLE[resort.resortName]
-      ?? resort.resortName.replace(/_/g, " ");
-    // Use the action API with prop=pageimages — much better coverage than
-    // the REST summary endpoint (which only has thumbnails for ~50% of articles)
+    const article = WIKI_ARTICLE[resort.resortName] ?? resort.resortName.replace(/_/g, " ");
     const url = new URL("https://en.wikipedia.org/w/api.php");
     url.searchParams.set("action", "query");
     url.searchParams.set("titles", article);
@@ -232,13 +275,12 @@ const ResortCard = ({ resort, rank, isBestPick }: ResortCardProps) => {
   const terrain = resort.terrainBreakdown || resort.terrain;
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 30 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ delay: rank * 0.15 }}
-      className={`glass-strong rounded-2xl overflow-hidden ${isBestPick ? "ring-2 ring-primary glow-border" : ""}`}
+    <div
+      className={`card-surface overflow-hidden ${
+        isBestPick ? "ring-2 ring-primary ring-primary-soft" : ""
+      }`}
     >
-      {/* Hero */}
+      {/* Hero image */}
       <div className="relative h-44 sm:h-52 overflow-hidden">
         {heroImg ? (
           <img
@@ -248,22 +290,26 @@ const ResortCard = ({ resort, rank, isBestPick }: ResortCardProps) => {
             onError={() => setHeroImg(null)}
           />
         ) : (
-          <div className="absolute inset-0 bg-gradient-to-br from-primary/30 via-secondary to-muted" />
+          <div className="absolute inset-0 bg-gradient-to-br from-blue-50 via-blue-100 to-blue-200" />
         )}
-        <div className="absolute inset-0 bg-gradient-to-t from-card/90 via-card/40 to-black/20" />
+        {/* Light gradient overlay — readable text without going dark */}
+        <div className="absolute inset-0 bg-gradient-to-t from-white/80 via-white/20 to-transparent" />
 
         {isBestPick && (
-          <div className="absolute top-3 left-3 bg-primary text-primary-foreground text-xs font-bold px-3 py-1.5 rounded-full flex items-center gap-1.5 z-10">
+          <div className="absolute top-3 left-3 bg-primary text-primary-foreground text-xs font-bold px-3 py-1.5 rounded-full flex items-center gap-1.5 z-10 shadow-sm">
             <Mountain className="h-3.5 w-3.5" /> Best Overall Pick
           </div>
         )}
 
         <div className="absolute bottom-0 left-0 right-0 p-5 flex items-end justify-between">
           <div>
-            <div className="text-xs font-bold text-primary mb-1">#{rank}</div>
-            <h3 className="text-2xl font-black text-foreground">{resort.resortName}</h3>
-            <p className="text-sm text-muted-foreground flex items-center gap-1">
-              <MapPin className="h-3 w-3" /> {resort.country || ""}{resort.region ? `, ${resort.region}` : ""}
+            <div className="text-xs font-bold text-primary mb-0.5">#{rank}</div>
+            <h3 className="text-2xl font-black text-foreground tracking-tight">
+              {resort.resortName}
+            </h3>
+            <p className="text-sm text-muted-foreground flex items-center gap-1 mt-0.5">
+              <MapPin className="h-3 w-3" />
+              {resort.country || ""}{resort.region ? `, ${resort.region}` : ""}
             </p>
           </div>
           <MatchScoreRing score={resort.matchScore} />
@@ -280,10 +326,10 @@ const ResortCard = ({ resort, rank, isBestPick }: ResortCardProps) => {
             {passes.map((p: any) => (
               <span
                 key={p.pass}
-                className={`text-xs font-medium px-2.5 py-1 rounded-full ${
+                className={`text-xs font-semibold px-2.5 py-1 rounded-full ${
                   p.covered
-                    ? "bg-success/15 text-success"
-                    : "bg-muted text-muted-foreground"
+                    ? "bg-green-50 text-green-700 border border-green-200"
+                    : "bg-gray-100 text-muted-foreground border border-gray-200"
                 }`}
               >
                 {p.covered ? "✓" : "✗"} {p.pass}
@@ -296,7 +342,7 @@ const ResortCard = ({ resort, rank, isBestPick }: ResortCardProps) => {
         <div className="space-y-2">
           <button
             onClick={() => setShowCosts(!showCosts)}
-            className="w-full flex items-center justify-between"
+            className="w-full flex items-center justify-between hover:opacity-70 transition-opacity"
           >
             <div className="flex items-center gap-2">
               <DollarSign className="h-4 w-4 text-primary" />
@@ -304,7 +350,11 @@ const ResortCard = ({ resort, rank, isBestPick }: ResortCardProps) => {
                 Est. ${cost?.total?.toLocaleString()} /person
               </span>
             </div>
-            <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform ${showCosts ? "rotate-180" : ""}`} />
+            <ChevronDown
+              className={`h-4 w-4 text-muted-foreground transition-transform ${
+                showCosts ? "rotate-180" : ""
+              }`}
+            />
           </button>
 
           <AnimatePresence>
@@ -315,13 +365,13 @@ const ResortCard = ({ resort, rank, isBestPick }: ResortCardProps) => {
                 exit={{ height: 0, opacity: 0 }}
                 className="overflow-hidden"
               >
-                <div className="glass rounded-xl p-4 space-y-3 mt-2">
+                <div className="inset-surface p-4 mt-2">
                   <div className="grid grid-cols-2 gap-3">
                     {[
-                      { icon: Plane, label: "Flights (avg)", value: cost?.flights_avg },
-                      { icon: Hotel, label: "Lodging /person", value: cost?.lodging_per_person },
-                      { icon: Ticket, label: "Lift Tickets", value: cost?.lift_tickets },
-                      { icon: Coffee, label: "Food & Misc", value: cost?.misc },
+                      { icon: Plane,   label: "Flights (avg)",    value: cost?.flights_avg },
+                      { icon: Hotel,   label: "Lodging /person",  value: cost?.lodging_per_person },
+                      { icon: Ticket,  label: "Lift Tickets",     value: cost?.lift_tickets },
+                      { icon: Coffee,  label: "Food & Misc",      value: cost?.misc },
                     ].map((item) => (
                       <div key={item.label} className="flex items-center gap-2">
                         <item.icon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
@@ -344,22 +394,25 @@ const ResortCard = ({ resort, rank, isBestPick }: ResortCardProps) => {
         {vibeTags.length > 0 && (
           <div className="flex flex-wrap gap-1.5">
             {vibeTags.map((tag: string) => (
-              <span key={tag} className="text-xs bg-accent/10 text-accent-foreground/80 px-2.5 py-1 rounded-full">
+              <span
+                key={tag}
+                className="text-xs bg-primary/8 text-primary px-2.5 py-1 rounded-full font-medium border border-primary/10"
+              >
                 {tag}
               </span>
             ))}
           </div>
         )}
 
-        {/* Preference Fit */}
+        {/* Preference Fit — tile grid with dot meters */}
         <VibeAlignmentPanel alignment={resort.vibeAlignment} />
 
         {/* Terrain Breakdown */}
         {terrain && <TerrainBar terrain={terrain} />}
 
-        {/* Why This Resort (AI paragraph) */}
+        {/* Why This Resort */}
         {(resort.whyThisResort || resort.summary) && (
-          <p className="text-sm text-muted-foreground italic leading-relaxed border-l-2 border-primary/30 pl-3">
+          <p className="text-sm text-muted-foreground leading-relaxed border-l-2 border-primary/25 pl-3 italic">
             {resort.whyThisResort || resort.summary}
           </p>
         )}
@@ -368,10 +421,10 @@ const ResortCard = ({ resort, rank, isBestPick }: ResortCardProps) => {
         {resort.realLodging ? (
           <LodgingDetails realLodging={resort.realLodging} resortName={resort.resortName} />
         ) : resort.lodgingRecommendation ? (
-          <div className="glass rounded-xl p-3 flex items-center gap-3">
+          <div className="inset-surface p-3 flex items-center gap-3">
             <Hotel className="h-4 w-4 text-primary shrink-0" />
             <div className="text-xs text-muted-foreground">
-              <span className="font-medium text-foreground">
+              <span className="font-semibold text-foreground">
                 {resort.lodgingRecommendation.units}× {resort.lodgingRecommendation.name}
               </span>
               {" "}({resort.lodgingRecommendation.type}) — ${resort.lodgingRecommendation.pricePerNight}/night,{" "}
@@ -380,22 +433,24 @@ const ResortCard = ({ resort, rank, isBestPick }: ResortCardProps) => {
           </div>
         ) : null}
 
-        {/* Real Flight Options */}
+        {/* Flight Options */}
         <FlightDetails realFlights={resort.realFlights} resortName={resort.resortName} />
 
-        {/* Itinerary */}
+        {/* Sample Itinerary */}
         {resort.itinerary?.length > 0 && (
           <div>
             <Button
               variant="ghost"
               size="sm"
               onClick={() => setShowItinerary(!showItinerary)}
-              className="w-full justify-between text-sm font-medium gap-2 h-9"
+              className="w-full justify-between text-sm font-medium gap-2 h-9 rounded-xl"
             >
               <span className="flex items-center gap-2">
                 <Calendar className="h-4 w-4 text-primary" /> View Sample Itinerary
               </span>
-              <ChevronDown className={`h-4 w-4 transition-transform ${showItinerary ? "rotate-180" : ""}`} />
+              <ChevronDown
+                className={`h-4 w-4 transition-transform ${showItinerary ? "rotate-180" : ""}`}
+              />
             </Button>
 
             <AnimatePresence>
@@ -408,12 +463,12 @@ const ResortCard = ({ resort, rank, isBestPick }: ResortCardProps) => {
                 >
                   <div className="space-y-2 mt-2">
                     {resort.itinerary.map((day: any) => (
-                      <div key={day.day} className="glass rounded-lg p-3">
-                        <div className="text-xs font-semibold text-primary mb-1">Day {day.day}</div>
+                      <div key={day.day} className="inset-surface p-3">
+                        <div className="text-xs font-bold text-primary mb-1.5">Day {day.day}</div>
                         <div className="grid grid-cols-1 sm:grid-cols-3 gap-1 text-xs text-muted-foreground">
-                          <div><span className="text-foreground font-medium">AM:</span> {day.morning}</div>
-                          <div><span className="text-foreground font-medium">PM:</span> {day.afternoon}</div>
-                          <div><span className="text-foreground font-medium">Eve:</span> {day.evening}</div>
+                          <div><span className="font-semibold text-foreground">AM: </span>{day.morning}</div>
+                          <div><span className="font-semibold text-foreground">PM: </span>{day.afternoon}</div>
+                          <div><span className="font-semibold text-foreground">Eve: </span>{day.evening}</div>
                         </div>
                       </div>
                     ))}
@@ -428,15 +483,18 @@ const ResortCard = ({ resort, rank, isBestPick }: ResortCardProps) => {
         {resort.warnings?.length > 0 && (
           <div className="space-y-1.5">
             {resort.warnings.map((w: string, i: number) => (
-              <div key={i} className="flex items-start gap-2 bg-warning/10 border border-warning/20 rounded-lg px-3 py-2">
-                <AlertTriangle className="h-3.5 w-3.5 text-warning shrink-0 mt-0.5" />
-                <span className="text-xs text-warning">{w}</span>
+              <div
+                key={i}
+                className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2"
+              >
+                <AlertTriangle className="h-3.5 w-3.5 text-amber-500 shrink-0 mt-0.5" />
+                <span className="text-xs text-amber-700">{w}</span>
               </div>
             ))}
           </div>
         )}
       </div>
-    </motion.div>
+    </div>
   );
 };
 
