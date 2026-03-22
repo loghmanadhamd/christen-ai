@@ -78,24 +78,30 @@ interface FlightPicks {
   mostDirect: FlightOption | null;
 }
 
-const FlightLegDisplay = ({ leg, label }: { leg: FlightLeg; label: string }) => (
-  <div className="space-y-1">
-    <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">{label}</div>
-    <div className="flex items-center gap-1.5 text-xs text-foreground">
-      <span className="font-medium">{fmtTime(leg.departure)}</span>
-      <span className="text-muted-foreground">→</span>
-      <span className="font-medium">{fmtTime(leg.arrival)}</span>
-    </div>
-    <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
-      <span>{parseDuration(leg.duration)}</span>
-      {leg.stops === 0 ? (
-        <span className="bg-success/15 text-success font-semibold px-1.5 py-0.5 rounded-full">Nonstop</span>
-      ) : (
-        <span>{leg.stops} stop{leg.stops > 1 ? "s" : ""}</span>
+const FlightLegDisplay = ({ leg, label }: { leg: FlightLeg; label: string }) => {
+  const flightNums = leg.segments.map((s) => s.flightNumber).filter(Boolean).join(" · ");
+  return (
+    <div className="space-y-1">
+      <div className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">{label}</div>
+      {flightNums && (
+        <div className="text-[10px] text-primary font-mono">{flightNums}</div>
       )}
+      <div className="flex items-center gap-1.5 text-xs text-foreground">
+        <span className="font-medium">{fmtTime(leg.departure)}</span>
+        <span className="text-muted-foreground">→</span>
+        <span className="font-medium">{fmtTime(leg.arrival)}</span>
+      </div>
+      <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+        <span>{parseDuration(leg.duration)}</span>
+        {leg.stops === 0 ? (
+          <span className="bg-success/15 text-success font-semibold px-1.5 py-0.5 rounded-full">Nonstop</span>
+        ) : (
+          <span>{leg.stops} stop{leg.stops > 1 ? "s" : ""}</span>
+        )}
+      </div>
     </div>
-  </div>
-);
+  );
+};
 
 const FlightCard = ({
   option,
@@ -126,8 +132,14 @@ const FlightCard = ({
       </div>
       <div className="text-[10px] text-muted-foreground">{airlineName}</div>
       <div className="grid grid-cols-2 gap-3 pt-1 border-t border-border">
-        <FlightLegDisplay leg={option.outbound} label={`${option.originAirport} → dest`} />
-        <FlightLegDisplay leg={option.return} label="Return" />
+        <FlightLegDisplay
+          leg={option.outbound}
+          label={`${option.originAirport} → ${option.outbound.segments[option.outbound.segments.length - 1]?.arrivalAirport ?? ""}`}
+        />
+        <FlightLegDisplay
+          leg={option.return}
+          label={`${option.return.segments[0]?.departureAirport ?? ""} → ${option.originAirport}`}
+        />
       </div>
     </div>
   );
