@@ -87,7 +87,7 @@ serve(async (req) => {
       method: 'POST',
       signal: AbortSignal.timeout(35000),
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${SUPABASE_ANON_KEY}` },
-      body: JSON.stringify({ regions: trip.geography, dateStart: trip.date_start, dateEnd: trip.date_end }),
+      body: JSON.stringify({ regions: trip.geography, dateStart: trip.date_start, dateEnd: trip.date_end, passTypes: trip.pass_types }),
     });
     if (!resortRes.ok) throw new Error(`fetch-resort-data failed: ${resortRes.status}`);
     const { resorts } = await resortRes.json();

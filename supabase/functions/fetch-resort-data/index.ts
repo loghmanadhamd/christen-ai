@@ -119,77 +119,96 @@ function getHistoricalDateRange(dateStart: string, dateEnd: string): { start: st
 
 const SNOTEL_BASE = "https://wcc.sc.egov.usda.gov/awdbRestApi/services/v1";
 
-// Find the nearest SNOTEL station — picks highest-elevation result (most representative of ski terrain)
-async function findSnotelStation(lat: number, lon: number): Promise<string | null> {
-  try {
-    const url = `${SNOTEL_BASE}/stations?latitude=${lat}&longitude=${lon}&radius=30&maxResults=5&networkCd=SNOTEL&returnForecastPointMetadata=false`;
-    const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
-    if (!res.ok) return null;
-    const stations = await res.json();
-    if (!Array.isArray(stations) || stations.length === 0) return null;
-    // Pick highest-elevation station (closest to actual resort elevation)
-    const sorted = [...stations].sort((a: any, b: any) => (b.elevation ?? 0) - (a.elevation ?? 0));
-    return sorted[0]?.stationTriplet ?? null;
-  } catch {
-    return null;
-  }
-}
+// Hardcoded resort → SNOTEL station triplet map.
+// The /stations API ignores all geographic filter params and returns all 4000+ stations,
+// so we pre-select the best nearby high-elevation station for each US resort.
+const RESORT_SNOTEL_STATIONS: Record<string, string> = {
+  "Vail":                    "415:CO:SNTL",  // Copper Mountain, 10500ft, 24km
+  "Park City":               "814:UT:SNTL",  // Thaynes Canyon, 9260ft, 4km
+  "Jackson Hole":            "1082:WY:SNTL", // Grand Targhee, 9260ft, 23km
+  "Telluride":               "1344:CO:SNTL", // Alta Lakes, 11290ft, 6km
+  "Steamboat":               "825:CO:SNTL",  // Tower, 10610ft, 14km
+  "Big Sky":                 "590:MT:SNTL",  // Lone Mountain, 8820ft, 2km
+  "Taos Ski Valley":         "1168:NM:SNTL", // Taos Powderhorn, 11020ft, 2km
+  "Alta":                    "1308:UT:SNTL", // Atwater, 8750ft, 1km
+  "Snowbird":                "766:UT:SNTL",  // Snowbird, 9170ft, 3km
+  "Arapahoe Basin":          "602:CO:SNTL",  // Loveland Basin, 11410ft, 4km
+  "Aspen Snowmass":          "1326:CO:SNTL", // Castle Peak, 11510ft, 25km
+  "Deer Valley":             "814:UT:SNTL",  // Thaynes Canyon, 9260ft, 5km
+  "Breckenridge":            "531:CO:SNTL",  // Hoosier Pass, 11600ft, 14km
+  "Copper Mountain":         "531:CO:SNTL",  // Hoosier Pass, 11600ft, 18km
+  "Squaw Valley / Palisades":"784:CA:SNTL",  // Palisades Tahoe, 8010ft, 3km
+  "Sun Valley":              "450:ID:SNTL",  // Dollarhide Summit, 8390ft, 28km
+  "Winter Park":             "335:CO:SNTL",  // Berthoud Summit, 11300ft, 9km
+};
 
 // Fetch current snow data from SNOTEL (US only). Returns null to signal fallback to Open-Meteo.
+// Uses SNWD (snow depth) daily values; computes snowfall from day-over-day depth increases
+// since many stations lack SNFL (daily snowfall) sensors.
 async function fetchSnotelCurrentData(resort: typeof RESORTS[0]): Promise<CurrentSnowData | null> {
+  const station = RESORT_SNOTEL_STATIONS[resort.name];
+  if (!station) return null;
+
   try {
-    const station = await findSnotelStation(resort.lat, resort.lng);
-    if (!station) return null;
     console.log(`fetch-resort-data: SNOTEL station for ${resort.name}: ${station}`);
 
     const today = formatDate(new Date());
     const seasonStart = getSeasonStartDate();
 
-    const dataUrl = `${SNOTEL_BASE}/data?stationTriplets=${encodeURIComponent(station)}&elementCd=SNWD,SNFL&beginDate=${seasonStart}&endDate=${today}&duration=DAILY&getFlags=false`;
+    // Correct API params: 'elements' (not 'elementCd'), no getFlags param
+    const dataUrl = `${SNOTEL_BASE}/data?stationTriplets=${encodeURIComponent(station)}&elements=SNWD&beginDate=${seasonStart}&endDate=${today}&duration=DAILY`;
     const dataRes = await fetch(dataUrl, { signal: AbortSignal.timeout(10000) });
     if (!dataRes.ok) return null;
 
     const dataArr = await dataRes.json();
     if (!Array.isArray(dataArr) || dataArr.length === 0) return null;
 
-    // Values shape: { date: string, value: number | null }[]
-    const snwdEntry = dataArr.find((d: any) => d.stationElement?.elementCode === "SNWD");
-    const snflEntry = dataArr.find((d: any) => d.stationElement?.elementCode === "SNFL");
-
+    // Actual response shape: [{ stationTriplet, data: [{ stationElement, values }] }]
+    const stationData: any[] = dataArr[0]?.data ?? [];
+    const snwdEntry = stationData.find((d: any) => d.stationElement?.elementCode === "SNWD");
     const snwdValues: { date: string; value: number | null }[] = snwdEntry?.values ?? [];
-    const snflValues: { date: string; value: number | null }[] = snflEntry?.values ?? [];
 
-    if (snwdValues.length === 0) return null; // No usable data
+    if (snwdValues.length === 0) return null;
 
-    // Current snow depth: last non-null SNWD value, inches → cm
+    // Current snow depth: last non-null value, inches → cm
     let currentSnowDepth = 0;
     for (let i = snwdValues.length - 1; i >= 0; i--) {
       const v = snwdValues[i].value;
       if (v != null && v >= 0) { currentSnowDepth = v * 2.54; break; }
     }
 
-    // Last 24hr snowfall: second-to-last SNFL value (last daily complete reading), inches → cm
-    const last24hrRaw = snflValues.length >= 2 ? (snflValues[snflValues.length - 2].value ?? 0) : 0;
-    const last24hrSnowfall = last24hrRaw * 2.54;
+    // Compute snowfall from day-over-day SNWD increases (standard approach when SNFL unavailable)
+    const depths = snwdValues.map(v => v.value);
 
-    // Last 7 days snowfall: sum of last 7 SNFL values, inches → cm
-    const recent7 = snflValues.slice(-7).map(v => v.value ?? 0);
-    const last7daysSnowfall = recent7.reduce((a, b) => a + b, 0) * 2.54;
+    // Season total: sum of all positive day-over-day depth increases
+    let seasonTotalInches = 0;
+    for (let i = 1; i < depths.length; i++) {
+      const prev = depths[i - 1];
+      const curr = depths[i];
+      if (prev != null && curr != null && curr > prev) seasonTotalInches += curr - prev;
+    }
 
-    // Season total: sum of all SNFL values — skip if >50% null (sensor missing)
-    const snflRaw = snflValues.map(v => v.value);
-    const nullCount = snflRaw.filter(v => v == null).length;
-    const hasSnfl = nullCount < snflRaw.length * 0.5;
-    const seasonTotalSnowfall = hasSnfl
-      ? snflRaw.reduce<number>((a, b) => a + (b ?? 0), 0) * 2.54
-      : 0;
+    // Last 7 days: positive increases across last 8 depth readings
+    let last7dInches = 0;
+    const last8 = depths.slice(-8);
+    for (let i = 1; i < last8.length; i++) {
+      const prev = last8[i - 1];
+      const curr = last8[i];
+      if (prev != null && curr != null && curr > prev) last7dInches += curr - prev;
+    }
+
+    // Last 24hr: single day-over-day increase
+    const n = depths.length;
+    const d1 = depths[n - 2];
+    const d2 = depths[n - 1];
+    const last24hrInches = (d1 != null && d2 != null && d2 > d1) ? d2 - d1 : 0;
 
     return {
       isHistorical: false,
       currentSnowDepth: Math.round(currentSnowDepth * 10) / 10,
-      last24hrSnowfall: Math.round(last24hrSnowfall * 10) / 10,
-      last7daysSnowfall: Math.round(last7daysSnowfall * 10) / 10,
-      seasonTotalSnowfall: Math.round(seasonTotalSnowfall * 10) / 10,
+      last24hrSnowfall: Math.round(last24hrInches * 2.54 * 10) / 10,
+      last7daysSnowfall: Math.round(last7dInches * 2.54 * 10) / 10,
+      seasonTotalSnowfall: Math.round(seasonTotalInches * 2.54 * 10) / 10,
     };
   } catch (err) {
     console.error(`SNOTEL fetch failed for ${resort.name}:`, err);
@@ -394,30 +413,22 @@ async function fetchSnowData(
 ): Promise<Record<string, SnowData>> {
   const snowData: Record<string, SnowData> = {};
 
-  // Process resorts in parallel batches of 5 to respect Open-Meteo rate limits
-  // while being ~5x faster than fully sequential (26 resorts: ~10s vs ~50s)
-  const BATCH_SIZE = 5;
-  for (let i = 0; i < resorts.length; i += BATCH_SIZE) {
-    const batch = resorts.slice(i, i + BATCH_SIZE);
-    await Promise.all(batch.map(async (resort) => {
-      try {
-        if (mode === "historical" && dateStart && dateEnd) {
-          snowData[resort.name] = await fetchHistoricalSnowData(resort, dateStart, dateEnd);
-        } else {
-          snowData[resort.name] = await fetchCurrentSnowData(resort);
-        }
-      } catch (err) {
-        console.error(`Snow fetch failed for ${resort.name}:`, err);
-        snowData[resort.name] = mode === "historical"
-          ? { isHistorical: true, historicalSnowDepth: 0, historicalSnowfall: 0, historicalSeasonTotal: 0, historicalLast7dSnowfall: 0, historicalLast48hrSnowfall: 0, historicalDateRange: { start: '', end: '' } }
-          : { isHistorical: false, currentSnowDepth: 0, last24hrSnowfall: 0, last7daysSnowfall: 0, seasonTotalSnowfall: 0 };
+  // Run all resorts fully in parallel — SNOTEL (US) has no rate limits,
+  // and the filtered set is small enough (~6-10 resorts) that Open-Meteo is fine too.
+  await Promise.all(resorts.map(async (resort) => {
+    try {
+      if (mode === "historical" && dateStart && dateEnd) {
+        snowData[resort.name] = await fetchHistoricalSnowData(resort, dateStart, dateEnd);
+      } else {
+        snowData[resort.name] = await fetchCurrentSnowData(resort);
       }
-    }));
-    // 200ms pause between batches to avoid hammering Open-Meteo
-    if (i + BATCH_SIZE < resorts.length) {
-      await new Promise(resolve => setTimeout(resolve, 200));
+    } catch (err) {
+      console.error(`Snow fetch failed for ${resort.name}:`, err);
+      snowData[resort.name] = mode === "historical"
+        ? { isHistorical: true, historicalSnowDepth: 0, historicalSnowfall: 0, historicalSeasonTotal: 0, historicalLast7dSnowfall: 0, historicalLast48hrSnowfall: 0, historicalDateRange: { start: '', end: '' } }
+        : { isHistorical: false, currentSnowDepth: 0, last24hrSnowfall: 0, last7daysSnowfall: 0, seasonTotalSnowfall: 0 };
     }
-  }
+  }));
 
   return snowData;
 }
@@ -432,6 +443,7 @@ serve(async (req) => {
       regions: z.array(z.string().max(50)).max(10, 'Too many regions').nullable().optional(),
       dateStart: z.string().max(10).optional(),
       dateEnd: z.string().max(10).optional(),
+      passTypes: z.array(z.string().max(20)).max(5).nullable().optional(),
     });
 
     const parseResult = ResortRequestSchema.safeParse(await req.json().catch(() => ({})));
@@ -440,13 +452,28 @@ serve(async (req) => {
         status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
-    const { regions, dateStart, dateEnd } = parseResult.data;
+    const { regions, dateStart, dateEnd, passTypes } = parseResult.data;
 
     // Filter resorts by region if specified
     let filteredResorts = RESORTS;
     if (regions && regions.length > 0 && !regions.includes("No Preference")) {
       filteredResorts = RESORTS.filter(r => regions.includes(r.region));
     }
+
+    // Filter by pass type: if caller specifies a single pass (epic or ikon), exclude the other.
+    // "both"/"none"/empty/null = no filtering (show all resorts regardless of pass).
+    if (passTypes && passTypes.length > 0) {
+      const lower = passTypes.map((p: string) => p.toLowerCase());
+      const hasEpic = lower.includes("epic");
+      const hasIkon = lower.includes("ikon");
+      if (hasEpic && !hasIkon) {
+        filteredResorts = filteredResorts.filter(r => r.pass.includes("epic"));
+      } else if (hasIkon && !hasEpic) {
+        filteredResorts = filteredResorts.filter(r => r.pass.includes("ikon"));
+      }
+      // epic+ikon = keep all; none/both/other = keep all
+    }
+    console.log(`fetch-resort-data: ${filteredResorts.length} resorts after filtering (regions=${JSON.stringify(regions)}, passTypes=${JSON.stringify(passTypes)})`);
 
     // Determine snow mode based on trip dates
     const mode = determineSnowMode(dateStart, dateEnd);
