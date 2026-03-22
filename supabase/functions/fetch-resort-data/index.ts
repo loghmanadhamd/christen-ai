@@ -117,6 +117,86 @@ function getHistoricalDateRange(dateStart: string, dateEnd: string): { start: st
   return { start: formatDate(histStart), end: formatDate(histEnd) };
 }
 
+const SNOTEL_BASE = "https://wcc.sc.egov.usda.gov/awdbRestApi/services/v1";
+
+// Find the nearest SNOTEL station — picks highest-elevation result (most representative of ski terrain)
+async function findSnotelStation(lat: number, lon: number): Promise<string | null> {
+  try {
+    const url = `${SNOTEL_BASE}/stations?latitude=${lat}&longitude=${lon}&radius=30&maxResults=5&networkCd=SNOTEL&returnForecastPointMetadata=false`;
+    const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
+    if (!res.ok) return null;
+    const stations = await res.json();
+    if (!Array.isArray(stations) || stations.length === 0) return null;
+    // Pick highest-elevation station (closest to actual resort elevation)
+    const sorted = [...stations].sort((a: any, b: any) => (b.elevation ?? 0) - (a.elevation ?? 0));
+    return sorted[0]?.stationTriplet ?? null;
+  } catch {
+    return null;
+  }
+}
+
+// Fetch current snow data from SNOTEL (US only). Returns null to signal fallback to Open-Meteo.
+async function fetchSnotelCurrentData(resort: typeof RESORTS[0]): Promise<CurrentSnowData | null> {
+  try {
+    const station = await findSnotelStation(resort.lat, resort.lng);
+    if (!station) return null;
+    console.log(`fetch-resort-data: SNOTEL station for ${resort.name}: ${station}`);
+
+    const today = formatDate(new Date());
+    const seasonStart = getSeasonStartDate();
+
+    const dataUrl = `${SNOTEL_BASE}/data?stationTriplets=${encodeURIComponent(station)}&elementCd=SNWD,SNFL&beginDate=${seasonStart}&endDate=${today}&duration=DAILY&getFlags=false`;
+    const dataRes = await fetch(dataUrl, { signal: AbortSignal.timeout(10000) });
+    if (!dataRes.ok) return null;
+
+    const dataArr = await dataRes.json();
+    if (!Array.isArray(dataArr) || dataArr.length === 0) return null;
+
+    // Values shape: { date: string, value: number | null }[]
+    const snwdEntry = dataArr.find((d: any) => d.stationElement?.elementCode === "SNWD");
+    const snflEntry = dataArr.find((d: any) => d.stationElement?.elementCode === "SNFL");
+
+    const snwdValues: { date: string; value: number | null }[] = snwdEntry?.values ?? [];
+    const snflValues: { date: string; value: number | null }[] = snflEntry?.values ?? [];
+
+    if (snwdValues.length === 0) return null; // No usable data
+
+    // Current snow depth: last non-null SNWD value, inches → cm
+    let currentSnowDepth = 0;
+    for (let i = snwdValues.length - 1; i >= 0; i--) {
+      const v = snwdValues[i].value;
+      if (v != null && v >= 0) { currentSnowDepth = v * 2.54; break; }
+    }
+
+    // Last 24hr snowfall: second-to-last SNFL value (last daily complete reading), inches → cm
+    const last24hrRaw = snflValues.length >= 2 ? (snflValues[snflValues.length - 2].value ?? 0) : 0;
+    const last24hrSnowfall = last24hrRaw * 2.54;
+
+    // Last 7 days snowfall: sum of last 7 SNFL values, inches → cm
+    const recent7 = snflValues.slice(-7).map(v => v.value ?? 0);
+    const last7daysSnowfall = recent7.reduce((a, b) => a + b, 0) * 2.54;
+
+    // Season total: sum of all SNFL values — skip if >50% null (sensor missing)
+    const snflRaw = snflValues.map(v => v.value);
+    const nullCount = snflRaw.filter(v => v == null).length;
+    const hasSnfl = nullCount < snflRaw.length * 0.5;
+    const seasonTotalSnowfall = hasSnfl
+      ? snflRaw.reduce<number>((a, b) => a + (b ?? 0), 0) * 2.54
+      : 0;
+
+    return {
+      isHistorical: false,
+      currentSnowDepth: Math.round(currentSnowDepth * 10) / 10,
+      last24hrSnowfall: Math.round(last24hrSnowfall * 10) / 10,
+      last7daysSnowfall: Math.round(last7daysSnowfall * 10) / 10,
+      seasonTotalSnowfall: Math.round(seasonTotalSnowfall * 10) / 10,
+    };
+  } catch (err) {
+    console.error(`SNOTEL fetch failed for ${resort.name}:`, err);
+    return null;
+  }
+}
+
 interface CurrentSnowData {
   isHistorical: false;
   currentSnowDepth: number;
@@ -138,6 +218,16 @@ interface HistoricalSnowData {
 type SnowData = CurrentSnowData | HistoricalSnowData;
 
 async function fetchCurrentSnowData(resort: typeof RESORTS[0]): Promise<CurrentSnowData> {
+  // Use SNOTEL for US resorts — actual gauge data, far more accurate than weather models
+  if (resort.country === "USA") {
+    const snotelData = await fetchSnotelCurrentData(resort);
+    if (snotelData) {
+      console.log(`fetch-resort-data: SNOTEL OK for ${resort.name}: depth=${snotelData.currentSnowDepth}cm, season=${snotelData.seasonTotalSnowfall}cm`);
+      return snotelData;
+    }
+    console.log(`fetch-resort-data: SNOTEL unavailable for ${resort.name}, falling back to Open-Meteo`);
+  }
+
   try {
     // Single forecast call: past_days=7 gives us 7 days history + 1 day forecast
     const forecastUrl = `https://api.open-meteo.com/v1/forecast?latitude=${resort.lat}&longitude=${resort.lng}&daily=snowfall_sum&hourly=snow_depth&past_days=7&forecast_days=1&timezone=auto`;
